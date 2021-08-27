@@ -36,7 +36,6 @@ public:
 	boost::asio::mutable_buffer header()
 	{
 		return boost::asio::buffer(this->content.data(), this->header_size());
-
 	}
 
 	boost::asio::mutable_buffer body()
@@ -47,6 +46,13 @@ public:
 	boost::asio::mutable_buffer data()
 	{
 		return boost::asio::buffer(this->content.data(), this->size());
+	}
+
+	std::string to_string()
+	{
+		std::string s;
+		*this >> s;
+		return s;
 	}
 
 	void operator << (const std::string& data)

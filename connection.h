@@ -7,38 +7,18 @@
 #include <memory>
 #include <iostream>
 
-using boost::asio::ip::tcp;
-
 class Connection : public std::enable_shared_from_this<Connection> {
 public:
 	Connection(
-		boost::asio::io_context& io_context,
-		tcp::socket socket,
-		std::function<void(Message&)> on_read,
-		std::function<void(boost::system::error_code)> on_disconnect) :
-		io_context(io_context),
+		boost::asio::ip::tcp::socket socket,
+		std::function<void(const std::string&)> on_read,
+		std::function<void(boost::system::error_code, std::shared_ptr<Connection>)> on_disconnect) :
 		socket(std::move(socket)),
 		on_read(on_read),
 		on_disconnect(on_disconnect)
 	{}
 
-	virtual ~Connection()
-	{
-		this->socket.close();
-	}
-
-	void start()
-	{
-		this->do_read_header();
-	}
-
-	void write(const Message& message)
-	{
-		this->write_queue.push_back(message);
-		if (this->write_queue.size() == 1) {
-			this->do_write();
-		}
-	}
+	virtual ~Connection() = default;
 
 	void do_read_header()
 	{
@@ -49,7 +29,7 @@ public:
 				self->do_read_body();
 			}
 			else {
-				self->on_disconnect(ec);
+				self->on_disconnect(ec, self);
 			}
 		});
 	}
@@ -60,13 +40,21 @@ public:
 		boost::asio::async_read(this->socket, this->message.body(),
 			[self = this->shared_from_this()](boost::system::error_code ec, size_t /*length*/) {
 			if (!ec) {
-				self->on_read(self->message);
+				self->on_read(self->message.to_string());
 				self->do_read_header();
 			}
 			else {
-				self->on_disconnect(ec);
+				self->on_disconnect(ec, self);
 			}
 		});
+	}
+
+	void write(const Message& message)
+	{
+		this->write_queue.push_back(message);
+		if (this->write_queue.size() == 1) {
+			this->do_write();
+		}
 	}
 
 	void do_write()
@@ -80,15 +68,16 @@ public:
 				}
 			}
 			else {
-				self->on_disconnect(ec);
+				self->on_disconnect(ec, self);
 			}
 		});
 	}
 
-	boost::asio::io_context& io_context;
-	tcp::socket socket;
-	std::function<void(Message&)> on_read;
-	std::function<void(boost::system::error_code)> on_disconnect;
+	boost::asio::ip::tcp::socket socket;
+	boost::asio::ip::tcp::endpoint endpoint;
+
+	std::function<void(const std::string&)> on_read;
+	std::function<void(boost::system::error_code, std::shared_ptr<Connection>)> on_disconnect;
 	Message message;
 	// TODO: write_queue must be thread-safe
 	std::deque<Message> write_queue;

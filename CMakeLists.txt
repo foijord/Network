@@ -8,7 +8,8 @@ find_package(Boost REQUIRED)
 
 include_directories(
 	${Boost_INCLUDE_DIRS}
-	${CMAKE_SOURCE_DIR})
+	${CMAKE_SOURCE_DIR}
+	${CMAKE_SOURCE_DIR}/../)
 
 link_directories(${Boost_LIBRARY_DIRS})
 

@@ -1,67 +1,67 @@
 
-#include <deque>
-#include <iostream>
-#include <memory>
-#include <set>
+#include <Scheme/Scheme.h>
 
-#include <boost/asio.hpp>
 #include <message.h>
 #include <connection.h>
 
-using boost::asio::ip::tcp;
+#include <boost/asio.hpp>
 
-class Server {
+#include <memory>
+#include <iostream>
+
+
+class Server : public std::enable_shared_from_this<Server> {
 public:
 	Server(
 		boost::asio::io_context& io_context,
-		const tcp::endpoint& endpoint) :
-		io_context(io_context),
+		boost::asio::ip::tcp::endpoint endpoint) :
 		acceptor(io_context, endpoint)
 	{
-		this->do_accept();
+		auto print = [this](const scm::List& lst) {
+			std::cout << lst.front() << std::endl;
+			return true;
+		};
+
+		auto write = [this](const scm::List& lst) {
+			for (auto& connection : this->connections) {
+				connection->write(scm::print(lst.front()));
+			}
+			return true;
+		};
+
+		this->env = scm::global_env();
+		this->env->outer = std::make_shared<scm::Env>(
+			std::unordered_map<std::string, std::any>{
+				{ scm::Symbol("write"), scm::fun_ptr(write) },
+				{ scm::Symbol("print"), scm::fun_ptr(print) },
+		});
 	}
 
 	void do_accept()
 	{
-		this->acceptor.async_accept([this](boost::system::error_code ec, tcp::socket socket) {
+		this->acceptor.async_accept(
+			[self = this->shared_from_this()](boost::system::error_code ec, boost::asio::ip::tcp::socket socket) {
+			std::cout << ec.message() << std::endl;
 			if (!ec) {
-				std::cout << "starting chat session" << std::endl;
-				auto connection = std::make_shared<Connection>(this->io_context, std::move(socket),
-					[this](Message& message) {
-						this->on_message(message);
+				auto connection = std::make_shared<Connection>(std::move(socket),
+					[self](const std::string& message) {
+						scm::eval(scm::read(message), self->env);
 					},
-					[](boost::system::error_code ec)
-					{
+					[self](boost::system::error_code ec, std::shared_ptr<Connection> connection) {
+						std::cout << ec.message() << std::endl;
+						self->connections.remove(connection);
 					});
 
-				connection->start();
-				this->connections.push_back(connection);
+				connection->do_read_header();
+				self->connections.push_back(connection);
 			}
-
-			this->do_accept();
-			});
+			self->do_accept();
+		});
 	}
 
-	void on_message(Message& message)
-	{
-		std::erase_if(this->connections,
-			[](auto& weak_ptr) {
-				return weak_ptr.expired();
-			});
-
-		for (auto connection : this->connections) {
-			if (auto ptr = connection.lock()) {
-				ptr->write(message);
-			}
-			else {
-				throw std::logic_error("Unexpected error occurred...");
-			}
-		}
-	}
-
-	tcp::acceptor acceptor;
-	boost::asio::io_context& io_context;
-	std::vector<std::weak_ptr<Connection>> connections;
+	boost::asio::ip::tcp::acceptor acceptor;
+	std::shared_ptr<scm::Env> env;
+	std::list<std::shared_ptr<Connection>> connections;
 };
 
 
@@ -69,13 +69,16 @@ int main(int argc, char* argv[])
 {
 	try {
 		boost::asio::io_context io_context;
-		Server server(io_context, tcp::endpoint(tcp::v4(), 80));
+		boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), 80);
+
+		auto connection = std::make_shared<Server>(io_context, endpoint);
+		connection->do_accept();
+
 		io_context.run();
 	}
 	catch (std::exception& e) {
 		std::cerr << "Exception: " << e.what() << std::endl;
 		return EXIT_FAILURE;
 	}
-
 	return EXIT_SUCCESS;
 }
