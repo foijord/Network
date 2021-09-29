@@ -15,8 +15,5 @@ link_directories(${Boost_LIBRARY_DIRS})
 
 add_compile_definitions($<$<CONFIG:Debug>:DEBUG>)
 
-add_executable(server server.cpp connection.h message.h)
-target_link_libraries (server ${Boost_LIBRARIES})
-
-add_executable(client client.cpp connection.h message.h)
-target_link_libraries (client ${Boost_LIBRARIES})
+add_executable(network network.cpp)
+target_link_libraries (network ${Boost_LIBRARIES})
