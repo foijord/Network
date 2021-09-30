@@ -2,11 +2,14 @@
 #include <Scheme/Scheme.h>
 
 #include <boost/asio.hpp>
+#include <boost/program_options.hpp>
 
 #include <deque>
 #include <memory>
 #include <iostream>
 #include <exception>
+
+namespace bpo = boost::program_options;
 
 
 class Message {
@@ -298,6 +301,44 @@ int main(int argc, char* argv[])
 		boost::asio::io_context io_context;
 		auto work_guard = boost::asio::make_work_guard(io_context);
 		auto network = std::make_shared<Network>(io_context);
+
+		std::string script;
+		std::string expression;
+		bpo::options_description generic("Generic options");
+		generic.add_options()
+			("help", "produce help message")
+			("script,s", bpo::value<std::string>(&script), "expression read from a text file")
+			("expression,e", bpo::value<std::string>(&expression), "expression passed in as string");
+
+		bpo::variables_map vm;
+		bpo::store(bpo::parse_command_line(argc, argv, generic), vm);
+		bpo::notify(vm);
+
+		bpo::positional_options_description p;
+		p.add("script", -1);
+
+		bpo::store(bpo::command_line_parser(argc, argv).options(generic).positional(p).run(), vm);
+		bpo::notify(vm);
+
+		if (vm.count("help")) {
+			std::cout << generic << std::endl;
+			return EXIT_SUCCESS;
+		}
+		if (vm.count("script")) {
+			std::ifstream stream(script, std::ios::in);
+			if (!stream.is_open()) {
+				std::cerr << "unable to open " + script << std::endl;
+				return EXIT_FAILURE;
+			}
+			const std::string expression{
+				std::istreambuf_iterator<char>(stream),
+				std::istreambuf_iterator<char>()
+			};
+			network->eval(expression);
+		}
+		if (vm.count("expression")) {
+			network->eval(expression);
+		}
 
 		std::thread io_thread(
 			[network] {
