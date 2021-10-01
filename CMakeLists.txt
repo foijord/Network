@@ -4,6 +4,10 @@ project(Network LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
+if(WIN32)
+	add_compile_options(/W3 /WX)
+endif(WIN32)
+
 find_package(Boost REQUIRED)
 
 include_directories(

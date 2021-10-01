@@ -59,7 +59,7 @@ public:
 
 	void operator << (const std::string& data)
 	{
-		uint32_t size = this->header_size() + data.size();
+		uint32_t size = static_cast<uint16_t>(this->header_size() + data.size());
 		this->content.resize(size);
 		std::memcpy(this->content.data(), &size, sizeof(size));
 		std::memcpy(this->content.data() + sizeof(size), data.data(), data.size());
@@ -268,7 +268,7 @@ public:
 			auto addr = std::any_cast<scm::String>(lst[0]);
 			auto port = std::any_cast<scm::Number>(lst[1]);
 			auto address = boost::asio::ip::address::from_string(addr);
-			return boost::asio::ip::tcp::endpoint(address, port);
+			return boost::asio::ip::tcp::endpoint(address, static_cast<unsigned short>(port));
 		};
 
 		this->env->outer = std::make_shared<scm::Env>(
