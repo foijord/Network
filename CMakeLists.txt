@@ -15,5 +15,5 @@ link_directories(${Boost_LIBRARY_DIRS})
 
 add_compile_definitions($<$<CONFIG:Debug>:DEBUG>)
 
-add_executable(network network.cpp)
-target_link_libraries (network ${Boost_LIBRARIES})
+add_executable(Repl Network.h Repl.cpp)
+target_link_libraries (Repl ${Boost_LIBRARIES})

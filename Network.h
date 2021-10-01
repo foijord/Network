@@ -2,14 +2,11 @@
 #include <Scheme/Scheme.h>
 
 #include <boost/asio.hpp>
-#include <boost/program_options.hpp>
 
 #include <deque>
 #include <memory>
 #include <iostream>
 #include <exception>
-
-namespace bpo = boost::program_options;
 
 
 class Message {
@@ -20,8 +17,6 @@ public:
 	{
 		*this << message;
 	}
-
-	std::vector<uint8_t> content;
 
 	uint32_t header_size()
 	{
@@ -83,6 +78,8 @@ public:
 		}
 		return os;
 	}
+
+	std::vector<uint8_t> content;
 };
 
 
@@ -90,7 +87,7 @@ class Connection : public std::enable_shared_from_this<Connection> {
 public:
 	Connection(
 		boost::asio::ip::tcp::socket socket,
-		std::function<void(std::string message)> on_message) :
+		std::function<void(Message message)> on_message) :
 		socket(std::move(socket)),
 		on_message(on_message)
 	{}
@@ -112,7 +109,7 @@ public:
 		boost::asio::async_read(this->socket, this->message.body(),
 			[self = this->shared_from_this()](boost::system::error_code ec, size_t) {
 			if (!ec) {
-				self->on_message(self->message.to_string());
+				self->on_message(self->message);
 				self->async_read_header();
 			}
 		});
@@ -142,7 +139,7 @@ public:
 	Message message;
 	std::deque<Message> write_queue;
 	boost::asio::ip::tcp::socket socket;
-	std::function<void(std::string message)> on_message;
+	std::function<void(Message message)> on_message;
 };
 
 
@@ -208,8 +205,11 @@ private:
 
 class Network {
 public:
-	Network(boost::asio::io_context& io_context) :
-		io_context(io_context)
+	Network(
+		boost::asio::io_context& io_context,
+		std::shared_ptr<scm::Env> env) :
+		io_context(io_context),
+		env(env)
 	{
 		scm::fun_ptr print = [this](const scm::List& lst) {
 			std::cout << lst.front() << std::endl;
@@ -229,8 +229,8 @@ public:
 		{
 			auto connection = std::make_shared<Connection>(
 				std::move(socket),
-				[this](std::string message) {
-					this->eval(message);
+				[this](Message message) {
+					this->eval(message.to_string());
 				});
 
 			connection->async_read_header();
@@ -271,14 +271,13 @@ public:
 			return boost::asio::ip::tcp::endpoint(address, port);
 		};
 
-		this->env = scm::global_env();
 		this->env->outer = std::make_shared<scm::Env>(
 			std::unordered_map<std::string, std::any>{
-				{ scm::Symbol("write"), write },
-				{ scm::Symbol("print"), print },
-				{ scm::Symbol("accept"), accept },
-				{ scm::Symbol("connect"), connect },
-				{ scm::Symbol("endpoint"), endpoint },
+				{ "write", write },
+				{ "print", print },
+				{ "accept", accept },
+				{ "connect", connect },
+				{ "endpoint", endpoint },
 		});
 	}
 
@@ -293,75 +292,3 @@ private:
 	std::list<std::weak_ptr<Connection>> connections;
 	std::function<void(boost::asio::ip::tcp::socket socket)> on_connect;
 };
-
-
-int main(int argc, char* argv[])
-{
-	try {
-		boost::asio::io_context io_context;
-		auto work_guard = boost::asio::make_work_guard(io_context);
-		auto network = std::make_shared<Network>(io_context);
-
-		std::string script;
-		std::string expression;
-		bpo::options_description generic("Generic options");
-		generic.add_options()
-			("help", "produce help message")
-			("script,s", bpo::value<std::string>(&script), "expression read from a text file")
-			("expression,e", bpo::value<std::string>(&expression), "expression passed in as string");
-
-		bpo::variables_map vm;
-		bpo::store(bpo::parse_command_line(argc, argv, generic), vm);
-		bpo::notify(vm);
-
-		bpo::positional_options_description p;
-		p.add("script", -1);
-
-		bpo::store(bpo::command_line_parser(argc, argv).options(generic).positional(p).run(), vm);
-		bpo::notify(vm);
-
-		if (vm.count("help")) {
-			std::cout << generic << std::endl;
-			return EXIT_SUCCESS;
-		}
-		if (vm.count("script")) {
-			std::ifstream stream(script, std::ios::in);
-			if (!stream.is_open()) {
-				std::cerr << "unable to open " + script << std::endl;
-				return EXIT_FAILURE;
-			}
-			const std::string expression{
-				std::istreambuf_iterator<char>(stream),
-				std::istreambuf_iterator<char>()
-			};
-			network->eval(expression);
-		}
-		if (vm.count("expression")) {
-			network->eval(expression);
-		}
-
-		std::thread io_thread(
-			[network] {
-				while (true) {
-					try {
-						while (true) {
-							std::string expression;
-							std::getline(std::cin, expression);
-							network->eval(expression);
-						}
-					}
-					catch (std::exception& e) {
-						std::cerr << e.what() << std::endl;
-					}
-				}
-			});
-
-		io_context.run();
-		io_thread.join();
-	}
-	catch (std::exception& e) {
-		std::cerr << "Exception: " << e.what() << std::endl;
-		return EXIT_FAILURE;
-	}
-	return EXIT_SUCCESS;
-}
