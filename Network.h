@@ -119,18 +119,18 @@ public:
 	{
 		this->write_queue.push_back(message);
 		if (this->write_queue.size() == 1) {
-			this->do_write();
+			this->async_write();
 		}
 	}
 
-	void do_write()
+	void async_write()
 	{
 		boost::asio::async_write(this->socket, this->write_queue.front().data(),
 			[self = this->shared_from_this()](boost::system::error_code ec, size_t) {
 			if (!ec) {
 				self->write_queue.pop_front();
 				if (!self->write_queue.empty()) {
-					self->do_write();
+					self->async_write();
 				}
 			}
 		});
